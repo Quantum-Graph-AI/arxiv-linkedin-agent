@@ -1,0 +1,199 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# ArxivAgent - Topics Configuration
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# Este arquivo define os tópicos de interesse para filtragem de papers do Arxiv.
+# Modifique de acordo com suas áreas de interesse.
+#
+
+[topics]
+# ───────────────────────────────────────────────────────────────────────────────
+# Tópicos Primários
+# Estes são sempre buscados e têm prioridade máxima
+# ───────────────────────────────────────────────────────────────────────────────
+primary = [
+    # Reinforcement Learning
+    "reinforcement learning",
+    "RLHF",
+    "DPO direct preference optimization",
+    "reward modeling",
+    "policy gradient",
+    "self-play",
+    
+    # Multi-Agent Systems
+    "multi-agent systems",
+    "agent coordination",
+    "agentic AI",
+    "LLM agents",
+    "tool use agents",
+    
+    # RAG & Retrieval
+    "RAG retrieval augmented generation",
+    "retrieval augmented",
+    "dense retrieval",
+    "hybrid search",
+    "embedding models",
+    
+    # R3 (Retrieval, Reasoning, Reinforcement)
+    "R3 retrieval reasoning reinforcement",
+    "retrieval reasoning",
+    "reasoning retrieval",
+    
+    # Breakthrough Systems
+    "AlphaEvolve",
+    "Absolute Zero",
+    "AlphaCode",
+    "AlphaProof",
+    
+    # Context Engineering
+    "context engineering",
+    "prompt engineering",
+    "in-context learning",
+    "few-shot learning",
+    "chain of thought",
+    "reasoning traces",
+]
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Tópicos Secundários
+# Buscados se houver quota disponível após os primários
+# ───────────────────────────────────────────────────────────────────────────────
+secondary = [
+    # General AI/ML
+    "machine learning",
+    "deep learning",
+    "neural networks",
+    "large language models",
+    "LLM",
+    
+    # Architectures
+    "transformer architectures",
+    "attention mechanism",
+    "mixture of experts",
+    "state space models",
+    "mamba",
+    
+    # Training Methods
+    "fine-tuning",
+    "parameter efficient",
+    "LoRA",
+    "QLoRA",
+    "quantization",
+    
+    # Reasoning
+    "reasoning",
+    "logical reasoning",
+    "mathematical reasoning",
+    "code generation",
+    
+    # Evaluation
+    "benchmark",
+    "evaluation",
+    "leaderboard",
+]
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Tópicos de Exclusão
+# Papers com estas palavras-chave são automaticamente descartados
+# ───────────────────────────────────────────────────────────────────────────────
+exclude = [
+    # Domínios não desejados
+    "biology",
+    "chemistry",
+    "physics",
+    "medical",
+    "healthcare",
+    "drug discovery",
+    "protein folding",
+    
+    # Aplicações específicas não relevantes
+    "autonomous driving",
+    "robotics",
+    "computer vision only",
+    
+    # Idiomas
+    "non-english",
+]
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Configurações do Arxiv
+# ═══════════════════════════════════════════════════════════════════════════════
+[arxiv]
+# Categorias do Arxiv para monitorar
+# Referência: https://arxiv.org/category_taxonomy
+categories = [
+    "cs.AI",    # Artificial Intelligence
+    "cs.LG",    # Machine Learning
+    "cs.CL",    # Computation and Language
+    "cs.MA",    # Multiagent Systems
+    "cs.NE",    # Neural and Evolutionary Computing
+    "cs.IR",    # Information Retrieval
+]
+
+# Máximo de papers a buscar por execução
+max_papers_per_run = 100
+
+# Máximo de papers a passar para análise semântica
+max_semantic_filter = 30
+
+# Máximo de papers a analisar profundamente
+max_deep_analysis = 5
+
+# Idade máxima dos papers em dias (0 = apenas hoje)
+max_age_days = 3
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Detecção de Papers Disruptivos
+# ═══════════════════════════════════════════════════════════════════════════════
+[detection]
+# Padrões que indicam trabalhos potencialmente revolucionários
+# Estes recebem flag priority=critical
+
+[[detection.patterns]]
+name = "AlphaEvolve-like"
+description = "Sistemas evolutivos que geram código/algoritmos"
+keywords = ["evolutionary", "code generation", "automated discovery", "genetic programming"]
+min_keywords = 2
+
+[[detection.patterns]]
+name = "Absolute Zero-like"
+description = "Aprendizado sem dados de treinamento"
+keywords = ["zero data", "self-play reasoning", "no training data", "bootstrap"]
+min_keywords = 2
+
+[[detection.patterns]]
+name = "Novel Architecture"
+description = "Arquiteturas fundamentalmente novas"
+keywords = ["new architecture", "breakthrough", "paradigm shift", "novel mechanism"]
+min_keywords = 2
+
+[[detection.patterns]]
+name = "State-of-the-Art"
+description = "Resultados SOTA significativos"
+keywords = ["state-of-the-art", "outperforms", "significant improvement", "new benchmark"]
+min_keywords = 2
+
+[[detection.patterns]]
+name = "Open Source Release"
+description = "Releases de código aberto importantes"
+keywords = ["open source", "code release", "reproducible", "github.com"]
+min_keywords = 2
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Configurações de Qualidade
+# ═══════════════════════════════════════════════════════════════════════════════
+[quality]
+# Score mínimo de relevância (0-10) para considerar um paper
+min_relevance_score = 6.0
+
+# Score mínimo para flag de prioridade alta
+high_priority_threshold = 8.0
+
+# Score mínimo para flag de prioridade crítica
+critical_priority_threshold = 9.0
+
+# Rejeitar papers muito curtos (provavelmente workshops/posters)
+min_abstract_length = 200
+
+# Rejeitar papers com muitos autores (provavelmente survey coletivo)
+max_authors = 15

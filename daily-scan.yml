@@ -1,0 +1,242 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# ArxivAgent - Daily Scan Workflow
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# Este workflow executa o agente principal para:
+# 1. Buscar novos papers no Arxiv
+# 2. Filtrar e analisar papers relevantes
+# 3. Gerar posts para LinkedIn
+# 4. Enviar para aprovação via Telegram
+#
+# Execução: 4x ao dia (6h, 12h, 18h, 00h UTC)
+# O Guardian Agent bloqueia publicações durante Shabbat
+#
+
+name: Daily ArXiv Scan
+
+on:
+  schedule:
+    # ─────────────────────────────────────────────────────────────────────────
+    # Cron Schedule: 4 execuções por dia
+    # Nota: GitHub Actions usa UTC
+    # ─────────────────────────────────────────────────────────────────────────
+    - cron: '0 6 * * *'    # 06:00 UTC = 03:00 BRT
+    - cron: '0 12 * * *'   # 12:00 UTC = 09:00 BRT
+    - cron: '0 18 * * *'   # 18:00 UTC = 15:00 BRT
+    - cron: '0 0 * * *'    # 00:00 UTC = 21:00 BRT
+  
+  # Permite execução manual via GitHub UI
+  workflow_dispatch:
+    inputs:
+      force_run:
+        description: 'Forçar execução mesmo durante Shabbat (USE COM CUIDADO)'
+        required: false
+        default: 'false'
+        type: boolean
+      
+      debug_mode:
+        description: 'Ativar modo debug com logs verbosos'
+        required: false
+        default: 'false'
+        type: boolean
+      
+      dry_run:
+        description: 'Modo dry-run (não publica nem envia Telegram)'
+        required: false
+        default: 'false'
+        type: boolean
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Environment Variables
+# ═══════════════════════════════════════════════════════════════════════════════
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  RUST_LOG: info
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Concurrency Control
+# Evita execuções paralelas que podem corromper o estado
+# ═══════════════════════════════════════════════════════════════════════════════
+concurrency:
+  group: arxiv-agent-scan
+  cancel-in-progress: false
+
+jobs:
+  # ═══════════════════════════════════════════════════════════════════════════
+  # JOB: scan-and-process
+  # Job principal que executa todo o pipeline
+  # ═══════════════════════════════════════════════════════════════════════════
+  scan-and-process:
+    name: 🔍 Scan ArXiv & Process Papers
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    # ─────────────────────────────────────────────────────────────────────────
+    # Permissions
+    # ─────────────────────────────────────────────────────────────────────────
+    permissions:
+      contents: write      # Para commit do dashboard
+      actions: write       # Para gerenciar artifacts
+    
+    steps:
+      # ═══════════════════════════════════════════════════════════════════════
+      # STEP 1: Checkout
+      # ═══════════════════════════════════════════════════════════════════════
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      # ═══════════════════════════════════════════════════════════════════════
+      # STEP 2: Setup Rust
+      # ═══════════════════════════════════════════════════════════════════════
+      - name: 🦀 Setup Rust Toolchain
+        uses: dtolnay/rust-action@stable
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+      
+      # ═══════════════════════════════════════════════════════════════════════
+      # STEP 3: Cache Dependencies
+      # ═══════════════════════════════════════════════════════════════════════
+      - name: 📦 Cache Cargo Dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+      
+      # ═══════════════════════════════════════════════════════════════════════
+      # STEP 4: Download Previous State
+      # ═══════════════════════════════════════════════════════════════════════
+      - name: 📂 Download Data Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: agent-data
+          path: data/
+        continue-on-error: true  # Primeira execução não terá artifacts
+      
+      # ═══════════════════════════════════════════════════════════════════════
+      # STEP 5: Build Release Binary
+      # ═══════════════════════════════════════════════════════════════════════
+      - name: 🔨 Build Release Binary
+        run: |
+          cargo build --release
+          echo "Binary size: $(du -h target/release/arxiv-linkedin-agent | cut -f1)"
+      
+      # ═══════════════════════════════════════════════════════════════════════
+      # STEP 6: Run Agent
+      # ═══════════════════════════════════════════════════════════════════════
+      - name: 🤖 Run ArxivAgent
+        env:
+          # LLM API Keys
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          
+          # Telegram
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          
+          # LinkedIn
+          LINKEDIN_ACCESS_TOKEN: ${{ secrets.LINKEDIN_ACCESS_TOKEN }}
+          LINKEDIN_PERSON_URN: ${{ secrets.LINKEDIN_PERSON_URN }}
+          
+          # Location (for Shabbat calculation)
+          USER_LATITUDE: ${{ secrets.USER_LATITUDE }}
+          USER_LONGITUDE: ${{ secrets.USER_LONGITUDE }}
+          USER_TIMEZONE: ${{ secrets.USER_TIMEZONE || 'America/Sao_Paulo' }}
+          
+          # Workflow inputs
+          FORCE_RUN: ${{ github.event.inputs.force_run || 'false' }}
+          DEBUG_MODE: ${{ github.event.inputs.debug_mode || 'false' }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+        run: |
+          # Configurar log level
+          if [ "$DEBUG_MODE" = "true" ]; then
+            export RUST_LOG=debug
+          fi
+          
+          # Executar agente
+          ./target/release/arxiv-linkedin-agent scan \
+            $( [ "$FORCE_RUN" = "true" ] && echo "--force" ) \
+            $( [ "$DRY_RUN" = "true" ] && echo "--dry-run" )
+      
+      # ═══════════════════════════════════════════════════════════════════════
+      # STEP 7: Upload Updated State
+      # ═══════════════════════════════════════════════════════════════════════
+      - name: 📤 Upload Data Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-data
+          path: |
+            data/memory.duckdb
+            data/embeddings/
+          retention-days: 90
+          if-no-files-found: warn
+      
+      # ═══════════════════════════════════════════════════════════════════════
+      # STEP 8: Commit Dashboard
+      # ═══════════════════════════════════════════════════════════════════════
+      - name: 📊 Commit Dashboard Updates
+        run: |
+          # Configurar git
+          git config user.name 'ArxivAgent Bot'
+          git config user.email 'bot@arxivagent.local'
+          
+          # Verificar se há mudanças no dashboard
+          if [ -d "dashboard" ] && [ -n "$(git status --porcelain dashboard/)" ]; then
+            git add dashboard/
+            git commit -m "📊 Update dashboard - $(date +%Y-%m-%d_%H:%M)"
+            git push
+            echo "Dashboard updated and pushed"
+          else
+            echo "No dashboard changes to commit"
+          fi
+      
+      # ═══════════════════════════════════════════════════════════════════════
+      # STEP 9: Summary
+      # ═══════════════════════════════════════════════════════════════════════
+      - name: 📝 Generate Summary
+        if: always()
+        run: |
+          echo "## 🤖 ArxivAgent Execution Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Timestamp:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Tentar ler métricas do arquivo de saída (se existir)
+          if [ -f "data/last_run_metrics.json" ]; then
+            echo "### Métricas da Execução" >> $GITHUB_STEP_SUMMARY
+            echo '```json' >> $GITHUB_STEP_SUMMARY
+            cat data/last_run_metrics.json >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # JOB: notify-failure
+  # Notifica via Telegram em caso de falha
+  # ═══════════════════════════════════════════════════════════════════════════
+  notify-failure:
+    name: 🚨 Notify Failure
+    runs-on: ubuntu-latest
+    needs: scan-and-process
+    if: failure()
+    
+    steps:
+      - name: 📱 Send Telegram Alert
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TELEGRAM_CHAT_ID}" \
+            -d parse_mode="Markdown" \
+            -d text="🚨 *ArxivAgent Error*%0A%0AO workflow falhou.%0A%0A[Ver logs](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
